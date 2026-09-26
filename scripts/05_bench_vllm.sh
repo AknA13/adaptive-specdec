@@ -29,6 +29,13 @@ export SPECDEC_PLUGIN=1
 # script, so a ${VAR:-INFO} default would never take effect and the bring-up
 # checkpoints would be invisible.
 export VLLM_LOGGING_LEVEL=INFO
+# Stable, node-local torch.compile cache. slurm/submit.sh points VLLM_CACHE_ROOT
+# at a per-job TMPDIR so concurrent jobs cannot corrupt each other's inductor
+# cache, but that also means every server in this stage recompiles both models
+# from scratch (~50 s each, x5 servers, x every requeue). /data is node-local,
+# so a per-node cache is safe here and survives preemption.
+export VLLM_CACHE_ROOT="${SPEC_VLLM_CACHE:-$DATA/vllm-cache}"
+mkdir -p "$VLLM_CACHE_ROOT"
 
 SERVER_PID=""
 stop_server() {
@@ -94,22 +101,30 @@ fi
 CONC="${SPEC_BENCH_CONC:-1,4,16,64}"
 N="${SPEC_BENCH_REQS:-64}"
 
-step "serving sweep: autoregressive baseline"
-start_server "ar" || die "ar server failed"
-run_soft "$PY" -m bench.bench_serving --base-url "$URL" --label ar --n "$N" --concurrency "$CONC"
-stop_server
+# Every label is skipped if its result already exists: this partition preempts,
+# and a requeued sweep should resume rather than redo 40 minutes of servers.
+done_label() { [ -s "$REPO/results/stage5_serving_$1.json" ]; }
 
-for k in 2 4 8; do
-  step "serving sweep: fixed k=$k"
-  start_server "fixed$k" --speculative-config "$(spec_cfg $k)" || { warn "fixed$k failed"; continue; }
-  run_soft "$PY" -m bench.bench_serving --base-url "$URL" --label "fixed$k" --n "$N" --concurrency "$CONC"
+sweep_one() {   # sweep_one <label> [server args...]
+  local label="$1"; shift
+  if done_label "$label"; then info "results/stage5_serving_$label.json exists -- skipping"; return 0; fi
+  step "serving sweep: $label"
+  start_server "$label" "$@" || { warn "$label server failed"; return 1; }
+  run_soft "$PY" -m bench.bench_serving --base-url "$URL" --label "$label" --n "$N" --concurrency "$CONC"
   stop_server
+}
+
+sweep_one ar
+for k in 2 4 8; do
+  sweep_one "fixed$k" --speculative-config "$(spec_cfg $k)"
 done
 
-step "serving sweep: adaptive controller (k chosen per step from live acceptance)"
-SPECDEC_CONTROLLER=ewma start_server "adaptive" --speculative-config "$(spec_cfg $KMAX)" \
-  || die "adaptive server failed"
-run_soft "$PY" -m bench.bench_serving --base-url "$URL" --label adaptive --n "$N" --concurrency "$CONC"
-stop_server
+if ! done_label adaptive; then
+  step "serving sweep: adaptive (k chosen per step from live acceptance)"
+  SPECDEC_CONTROLLER=ewma start_server "adaptive" --speculative-config "$(spec_cfg $KMAX)" \
+    && run_soft "$PY" -m bench.bench_serving --base-url "$URL" --label adaptive \
+         --n "$N" --concurrency "$CONC"
+  stop_server
+fi
 
 report_soft_fails

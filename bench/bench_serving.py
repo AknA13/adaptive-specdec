@@ -143,10 +143,14 @@ def scrape_spec_metrics(base_url):
         if line.startswith("#"):
             continue
         for key, name in want.items():
-            if line.startswith(key):
+            # Anchor on the exact metric name followed by '{' or whitespace.
+            # A plain startswith() also matches
+            # vllm:spec_decode_num_accepted_tokens_per_pos, whose buckets sum to
+            # the same total -- summing both reported an acceptance rate of
+            # 1.56, i.e. exactly 2x, which is how the bug was caught.
+            if re.match(re.escape(key) + r"(\{|\s)", line):
                 m = re.search(r"\s([0-9.eE+-]+)$", line.strip())
                 if m:
-                    # per-position counters share a prefix; sum them
                     out[name] = out.get(name, 0.0) + float(m.group(1))
     return out
 
