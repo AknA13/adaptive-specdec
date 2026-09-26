@@ -198,8 +198,14 @@ on math — and throughput still falls. The cost ratio is why:
   so the 0.6B costs 76% of the 8B (c = 0.76) instead of ~1/13. CUDA-graphing one
   draft decode: **21.4 ms → 4.7 ms, 4.58×, so 78% of the step was launch
   overhead.**
-- **vLLM:** not a launch artifact — the drafter is compiled and graphed — but
-  backing t_draft out of the inter-token latency still gives c ≈ 1.6.
+- **vLLM:** not generic launch overhead — the drafter is compiled and graphed —
+  but a specific upstream limit. **The drafter can only use PIECEWISE CUDA
+  graphs** (`eagle.py:295,398,801,1173`) while the target gets FULL ones
+  (`gpu_model_runner.py:3603`). PIECEWISE excludes attention, so a 28-layer
+  draft launches ~56 eager attention kernels per round against the target's
+  zero. That penalty scales with draft *depth* and is invisible for the
+  one-layer EAGLE head the path was designed for. Backing t_draft out of the
+  inter-token latency gives c ≈ 1.6.
 
 Feed those into the speedup formula the controller maximises and it predicts
 0.93× and 0.55× respectively. Measured: 0.88× and 0.61×. **The controller is not

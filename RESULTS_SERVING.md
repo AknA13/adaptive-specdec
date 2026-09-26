@@ -59,19 +59,49 @@ engine reached (`RESULTS_ENGINE.md`, c = 0.76 there) arrived at from a completel
 different runtime: **the draft model is not cheap enough relative to the target
 for speculation to pay on this pair.**
 
-The difference is that in vLLM it is *not* a launch-overhead artifact — the drafter
-is compiled under its own `draft_model` tag and its CUDA graphs are captured. The
-remaining suspects, in the order worth investigating:
+The difference is that in vLLM this is *not* generic launch overhead — the
+drafter is compiled under its own `draft_model` tag and its CUDA graphs are
+captured. The cause is more specific, and it is in the upstream source:
 
-1. **The drafter re-runs the whole prompt-shaped forward each step.** EAGLE's
-   `propose()` does its first forward over *all* scheduled tokens, then k-1
-   batch-shaped forwards. That is cheap for a 1-layer EAGLE head and much less so
-   for 28 layers.
-2. **Per-step attention-metadata rebuilds.** `build_for_drafting` runs once per
-   draft position, on the CPU, in the critical path.
-3. **A 13× parameter ratio is simply not much.** Published draft-model speedups
-   mostly use ratios like 70B/7B. At 8B/0.6B, with the target already at 6.1 ms
-   on an H200, there is little room for a draft to be dramatically cheaper.
+**vLLM's drafter can only use PIECEWISE CUDA graphs; the target gets FULL ones.**
+
+```
+eagle.py:295, 398, 801, 1173     cudagraph_runtime_mode = CUDAGraphMode.PIECEWISE
+eagle.py:104                     warns that the proposer "only supports cudagraph_mode PIECEWISE"
+gpu_model_runner.py:3603-3610    if cudagraph_mode.has_full_cudagraphs():
+                                     wrap self.model with CUDAGraphMode.FULL
+```
+
+PIECEWISE graphs deliberately exclude the attention ops — `vllm::unified_attention`
+and friends are listed in `splitting_ops` — so they are launched eagerly. The
+consequence:
+
+| | attention launches per decode step | graph coverage |
+|---|---|---|
+| target (36 layers) | 0 — whole step is one FULL graph | complete |
+| draft (28 layers) | 28, eager, **twice per round** | PIECEWISE only |
+
+So the draft pays ~56 eager attention launches per round against the target's
+zero. That is a penalty proportional to the draft's *depth*, and it is invisible
+for the one draft vLLM was designed around: an EAGLE head is a **single** layer,
+where PIECEWISE costs one launch. A 28-layer draft model is a different animal,
+and the framework has no way to give it a FULL graph.
+
+This reframes the result. It is not "an 8B/0.6B pair cannot benefit from
+speculative decoding" — it is "vLLM's drafter path is built for one-layer heads,
+and a real draft model hits a structural limit that the parameter ratio would not
+predict." Lifting it means letting the drafter take FULL cudagraphs, which is a
+concrete upstream change rather than a tuning knob, and is the single highest-value
+follow-up to this project.
+
+Two secondary contributors, smaller but real:
+
+1. **The drafter runs two forwards per round at k=2, not one of them cheap.**
+   `propose()` does its first forward over *all* scheduled tokens (B(k+1)
+   positions) and then k-1 batch-shaped forwards. At k=2, B=1 that is a width-3
+   forward plus a width-1 forward: two full passes through 28 layers.
+2. **`build_for_drafting` rebuilds attention metadata on the CPU once per draft
+   position,** inside the critical path.
 
 ## Concurrency behaves as predicted
 
