@@ -123,6 +123,8 @@ class RunStats:
             "t_draft": self.t_draft, "t_target": self.t_target, "t_total": self.t_total,
             "tokens_per_s": self.emitted / self.t_total if self.t_total else 0.0,
             "alpha_by_position": self.alpha_by_position(),
+            "offered_at": list(self.offered_at), "accepted_at": list(self.accepted_at),
+            "reached": sum(self.offered_at),
             "k_history": self.k_history, "accept_history": self.accept_history,
         }
 

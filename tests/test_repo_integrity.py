@@ -112,6 +112,13 @@ def main():
                     and isinstance(node.args[0].value, str)
                     and node.args[0].value.startswith("SPEC_")):
                 used.add(node.args[0].value)
+    # Shell stages read SPEC_ vars too, and those are the ones an operator is
+    # most likely to want to set, so scan them as well.
+    import re
+    for sh in list((REPO / "scripts").glob("*.sh")) + list((REPO / "slurm").glob("*.sh")):
+        used |= set(re.findall(r"SPEC_[A-Z0-9_]+", sh.read_text()))
+    # SPEC_SLURM_ is a prefix fragment from a comment, not a variable.
+    used -= {"SPEC_SLURM_", "SPEC_QUIET_ENV"}
     undocumented = sorted(v for v in used if v not in example)
     check("no undocumented SPEC_ env var", not undocumented, ", ".join(undocumented))
 
