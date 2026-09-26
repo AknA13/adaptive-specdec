@@ -75,9 +75,13 @@ n_gpus() {
   fi
 }
 
-# SLURM scopes nvidia-smi to your cgroup, so never pass -i with a physical index.
-gpu_free()  { nvidia-smi --query-gpu=memory.free  --format=csv,noheader,nounits 2>/dev/null | sort -n | head -1 || echo 0; }
-gpu_total() { nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | sort -n | head -1 || echo 140000; }
+# Ask torch, not nvidia-smi. nvidia-smi is NOT cgroup-scoped on every node here
+# (measured on lorax: it lists all 7 GPUs under a --gres=gpu:1 allocation), so
+# taking the min over its rows reports some other job's full GPU and wait_free
+# blocks forever. torch.cuda.mem_get_info() respects CUDA_VISIBLE_DEVICES and
+# reports the device we were actually given.
+gpu_free()  { "$PY" -c "import torch;print(int(torch.cuda.mem_get_info()[0]/1048576))" 2>/dev/null || echo 0; }
+gpu_total() { "$PY" -c "import torch;print(int(torch.cuda.mem_get_info()[1]/1048576))" 2>/dev/null || echo 140000; }
 
 # vLLM gpu_memory_utilization sized from what is actually free right now.
 # NOTE: with the draft model resident there are 64 KV layers instead of 36, so

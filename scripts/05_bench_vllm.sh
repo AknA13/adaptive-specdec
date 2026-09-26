@@ -10,6 +10,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 SMOKE=0; [ "${1:-}" = "--smoke" ] && { SMOKE=1; shift; }
 NG=$(n_gpus); [ "$NG" -lt 1 ] && die "no GPU visible"
+wait_free "${SPEC_MIN_FREE_MIB:-40000}"
 
 CK="$DATA/ckpt/sft_kd"; [ -s "$CK/config.json" ] || CK="$DRAFT"
 PORT="${SPEC_VLLM_PORT:-8${RANDOM:0:3}}"

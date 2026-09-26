@@ -57,6 +57,33 @@ sys.exit(0 if ok else 1)
 PY
 [ $? -eq 0 ] || die "model weights not reachable (Qwen3-0.6B is cached only on horton; check HF_HOME and --nodelist)"
 
+step "weights are actually present (not just a config stub)"
+# A cache dir can hold config.json + tokenizer and no weights at all -- that is
+# what lorax's Qwen3-8B looked like, and AutoConfig.from_pretrained is perfectly
+# happy with it. The failure then lands 90 seconds into the benchmark instead of
+# here. Resolve the snapshot and check for real tensor files.
+"$PY" - <<PY
+import os, sys, glob
+from pathlib import Path
+from transformers.utils import cached_file
+ok = True
+for name, mid in (("target", os.environ["SPEC_TARGET_ID"]), ("draft", os.environ["SPEC_DRAFT_ID"])):
+    try:
+        cfg = cached_file(mid, "config.json")
+        snap = Path(cfg).parent
+        wts = (sorted(snap.glob("*.safetensors")) + sorted(snap.glob("*.bin")))
+        size = sum(w.stat().st_size for w in wts if w.exists()) / 1e9
+        if not wts or size < 0.1:
+            print(f"  {name:6s} NO WEIGHTS in {snap} (found {len(wts)} files, {size:.2f} GB)")
+            ok = False
+        else:
+            print(f"  {name:6s} {len(wts)} weight file(s), {size:.1f} GB")
+    except Exception as e:
+        print(f"  {name:6s} FAILED to resolve: {type(e).__name__}: {e}"); ok = False
+sys.exit(0 if ok else 1)
+PY
+[ $? -eq 0 ] || die "model weights missing from the cache on this node (a config-only stub resolves fine but cannot load)"
+
 step "tokenizer compatibility (speculative decoding is undefined otherwise)"
 "$PY" - <<PY
 import os, sys

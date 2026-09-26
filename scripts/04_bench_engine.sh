@@ -3,6 +3,10 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 QUICK=0; [ "${1:-}" = "--quick" ] && { QUICK=1; shift; }
 NG=$(n_gpus); [ "$NG" -lt 1 ] && die "no GPU visible"
+# This partition is OverSubscribe=YES:4, so SLURM will happily hand out a GPU
+# that another job already fills. Both models plus KV need ~30 GB; wait for it
+# rather than OOMing 90 seconds into a model load.
+wait_free "${SPEC_MIN_FREE_MIB:-40000}"
 
 if [ "$QUICK" = 1 ]; then
   step "quick engine check (greedy identity + speedup on a few problems)"
