@@ -171,6 +171,41 @@ scripts/05_bench_vllm.sh --smoke  # vLLM bring-up checkpoints 1-6
 scripts/06_profile.sh           # torch.profiler + cost ratio + CUDA-graph headroom
 ```
 
+## Measured results
+
+Full write-ups in `RESULTS_ENGINE.md` and `RESULTS_SERVING.md`. Qwen3-8B target,
+**stock** Qwen3-0.6B draft, one H200.
+
+**The proposer works and is correct.** All bring-up checkpoints pass, including
+the one that matters: **16/16 greedy completions through the DraftModelProposer
+are token-identical to speculation-off**. The shared KV cache group reports
+`389,136 tokens` across all 64 layers, and the drafter compiles under its own tag
+with CUDA graphs captured.
+
+**Speculation does not pay on this model pair, and both runtimes agree why.**
+
+| | α | accepted/round | vs autoregressive |
+|---|---|---|---|
+| from-scratch engine, k=4 | 0.91 | 4.10 | 0.85× |
+| from-scratch engine, adaptive | 0.91 | 4.38 | 0.88× |
+| vLLM, k=2 (conc 1) | 0.78 | 2.56 | 0.61× |
+
+Acceptance is high — an *untrained* 0.6B draft agrees with the 8B 91% of the time
+on math — and throughput still falls. The cost ratio is why:
+
+- **From-scratch engine:** Self CPU 3.52 s vs Self CUDA 0.50 s, and a batch-8
+  forward costs the same 21.4 ms as a batch-1 forward. Nothing is compute-bound,
+  so the 0.6B costs 76% of the 8B (c = 0.76) instead of ~1/13. CUDA-graphing one
+  draft decode: **21.4 ms → 4.7 ms, 4.58×, so 78% of the step was launch
+  overhead.**
+- **vLLM:** not a launch artifact — the drafter is compiled and graphed — but
+  backing t_draft out of the inter-token latency still gives c ≈ 1.6.
+
+Feed those into the speedup formula the controller maximises and it predicts
+0.93× and 0.55× respectively. Measured: 0.88× and 0.61×. **The controller is not
+underperforming; it is correctly reporting that there is no speedup available on
+this pair.**
+
 ## Gates
 
 A stage is not done until its gate passes, or until its failure is reported with
@@ -178,12 +213,12 @@ the metric that shows it.
 
 | | gate | status |
 |---|---|---|
-| G1 | losslessness: TV < 0.02 vs the exact AR marginal | **passing** (0.0056) |
-| G2 | greedy output token-identical to autoregressive | **passing** on CPU; GPU half pending |
-| G3 | trained draft raises acceptance ≥ 0.05 over stock | pending GPU |
-| G4 | adaptive ≥ 95% of best fixed k everywhere, ≥ it somewhere | passing in simulation (+17.7%) |
-| G5 | ≥ 1.5× tokens/s vs autoregressive at batch 1 greedy | pending GPU |
-| G6 | vLLM bring-up checkpoints 1–6 | **checkpoint 1 passing** (CPU); 2–6 pending GPU |
+| G1 | losslessness: TV < 0.02 vs the exact AR marginal | **pass** — 0.0056, χ² p=0.62, all 4 injected bugs caught |
+| G2 | greedy output token-identical to autoregressive | **pass** — CPU exact; on GPU every divergence is a bf16 tie (gap 0.25 vs 2 ULP 0.34), zero hard mismatches; vLLM path 16/16 identical |
+| G3 | trained draft raises acceptance ≥ 0.05 over stock | queued (trace gen → FSDP training) |
+| G4 | adaptive ≥ 95% of best fixed k everywhere, ≥ it somewhere | **pass in simulation** (+17.7% on a shifting workload); adaptive beats every fixed k measured on GPU |
+| G5 | ≥ 1.5× tokens/s vs autoregressive | **fails, and explained** — 0.88× (engine) / 0.61× (vLLM); the cost ratio makes it unreachable, see above |
+| G6 | vLLM bring-up checkpoints 1–6 | **pass** — including 16/16 greedy identity |
 
 ## Caveats, stated up front
 
