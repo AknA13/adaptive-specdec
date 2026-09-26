@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adaptive-specdec"
+version = "0.1.0"
+description = "Draft-model speculative decoding for vLLM V1, with an adaptive draft-length controller"
+requires-python = ">=3.10"
+
+# vLLM loads this in every process that matters: EngineArgs.__post_init__,
+# EngineCore.__init__, and WorkerWrapperBase.init_worker. That is what lets the
+# proposer be installed without editing site-packages or forking vLLM --
+# important here because the `rl` env has a mixed torch 2.9/2.11 install that a
+# reinstall would wreck.
+[project.entry-points."vllm.general_plugins"]
+adaptive_specdec = "vllm_draft_spec:register"
+
+[tool.setuptools]
+packages = ["vllm_draft_spec", "specdec"]
+
+# Deliberately no dependencies: install with
+#   pip install -e . --no-deps --no-build-isolation
+# so pip cannot resolve (and break) torch or vllm.
