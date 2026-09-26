@@ -1,0 +1,65 @@
+{
+  "args": {
+    "target": "Qwen/Qwen3-8B",
+    "draft": "Qwen/Qwen3-0.6B",
+    "dataset": "math500",
+    "n": 2,
+    "max_new": 64,
+    "k": 4,
+    "batch_sizes": "1,8",
+    "ctx": 512,
+    "capacity": 2048,
+    "tag": "profile"
+  },
+  "run": {
+    "rounds": 16,
+    "emitted": 64,
+    "t_draft": 2.5282402441371232,
+    "t_target": 0.740708866622299,
+    "t_total": 3.4784533659694716,
+    "draft_forwards": 81,
+    "target_forwards": 17,
+    "acceptance_rate": 0.75,
+    "alpha_conditional": 0.8888888888888888,
+    "mean_accepted_len": 4.0,
+    "tokens_per_s": 18.398981750374194,
+    "alpha_by_position": [
+      0.875,
+      0.8571428571428571,
+      1.0,
+      0.8333333333333334
+    ],
+    "t_other": 0.20950425521004945
+  },
+  "cost_ratio": [
+    {
+      "batch": 1,
+      "t_draft_ms": 21.376121300272644,
+      "t_target_ms": 28.109173339325935,
+      "c": 0.7604678032408209,
+      "k_star": {
+        "0.5": 1,
+        "0.6": 1,
+        "0.7": 1,
+        "0.8": 2,
+        "0.9": 4
+      }
+    },
+    {
+      "batch": 8,
+      "t_draft_ms": 21.414606040343642,
+      "t_target_ms": 28.17535456037149,
+      "c": 0.7600474377157684,
+      "k_star": {
+        "0.5": 1,
+        "0.6": 1,
+        "0.7": 1,
+        "0.8": 2,
+        "0.9": 4
+      }
+    }
+  ],
+  "cuda_graph": {
+    "error": "AttributeError: 'NoneType' object has no attribute 'clone'"
+  }
+}

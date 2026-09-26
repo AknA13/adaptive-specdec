@@ -78,7 +78,7 @@ class _RaggedLayer(CacheLayerMixin):
         return self.parent.kv_len_for(q), 0
 
     def get_seq_length(self):
-        return int(self.parent.lengths.max().item()) if self.is_initialized else 0
+        return self.parent.max_len if self.is_initialized else 0
 
     def get_max_cache_shape(self):
         return self.parent.capacity
@@ -98,14 +98,33 @@ class RaggedCache(Cache):
     def __init__(self, n_layers, batch_size, capacity, device):
         self.capacity = int(capacity)
         self.batch_size = int(batch_size)
-        self.lengths = torch.zeros(self.batch_size, dtype=torch.long, device=device)
         self.device = device
+        # Lengths live on the CPU and are mirrored to the GPU.
+        #
+        # The GPU copy exists only to build scatter indices. The CPU copy is the
+        # source of truth because `kv_len_for` needs a Python int and is called
+        # from every layer's update(): reading it off the GPU cost one
+        # device sync PER LAYER PER FORWARD -- ~216 syncs per round at 36 layers
+        # and 6 forwards, which made speculative decoding slower than plain
+        # autoregressive decoding (measured: 0.87x) despite a 0.91 acceptance
+        # rate. Every length update is exactly known on the host, so none of
+        # those syncs were ever necessary.
+        self.lengths_cpu = torch.zeros(self.batch_size, dtype=torch.long)
+        self.lengths = torch.zeros(self.batch_size, dtype=torch.long, device=device)
+        self.max_len = 0
+        self._uniform = True
         super().__init__(layers=[_RaggedLayer(self) for _ in range(n_layers)])
+
+    def _push(self):
+        """Mirror the CPU lengths to the device and refresh the cached scalars."""
+        self.lengths.copy_(self.lengths_cpu, non_blocking=True)
+        self.max_len = int(self.lengths_cpu.max())
+        self._uniform = bool(int(self.lengths_cpu.min()) == self.max_len)
 
     # ---- geometry ----------------------------------------------------------
     def kv_len_for(self, q):
-        """Width of the key/value window this forward will read."""
-        return int(self.lengths.max().item()) + q
+        """Width of the key/value window this forward will read. Pure CPU."""
+        return self.max_len + q
 
     def positions(self, q):
         """RoPE positions [B, q]: each row continues from its own length."""
@@ -113,19 +132,26 @@ class RaggedCache(Cache):
         return self.lengths.view(-1, 1) + ar
 
     def cache_position(self, q):
-        """Shared 1-D cache_position. Only used by mask builders we bypass, but
-        transformers wants it present and self-consistent."""
-        base = int(self.lengths.max().item())
-        return torch.arange(base, base + q, device=self.device)
+        """Shared 1-D cache_position, consistent with the widest row."""
+        return torch.arange(self.max_len, self.max_len + q, device=self.device)
 
     def attn_mask(self, q, dtype, valid=None):
         """Additive mask [B, 1, q, kv_len]; 0 where attention is allowed.
+        Returns None when no mask is needed.
 
         valid: optional [B] cap on readable slots, for right-padded prefill.
         Additive float (not bool) and finfo.min (not -inf) to match what
         transformers itself produces -- a fully masked row then yields 0 rather
         than NaN.
+
+        When every row has the same length and there is no padding to hide, the
+        mask this would build is exactly the plain causal mask transformers
+        derives from cache_position, so we return None and skip allocating a
+        [B, 1, q, kv_len] tensor on every decode step. That is the common case:
+        batch 1 always, and any batch whose rows accepted equally.
         """
+        if valid is None and self._uniform:
+            return None
         kv_len = self.kv_len_for(q)
         s = torch.arange(kv_len, device=self.device).view(1, 1, kv_len)
         j = torch.arange(q, device=self.device).view(1, q, 1)
@@ -138,25 +164,38 @@ class RaggedCache(Cache):
     # ---- mutation ----------------------------------------------------------
     def advance(self, q):
         """Call once per forward, after the model has run."""
-        self.lengths += q
+        self.lengths_cpu += int(q)
+        self._push()
 
     def set_lengths(self, lengths):
-        self.lengths.copy_(lengths.to(self.lengths.device, self.lengths.dtype))
+        self.lengths_cpu.copy_(torch.as_tensor(lengths, dtype=torch.long).cpu())
+        self._push()
 
     def rollback(self, n):
-        """Drop the last n[b] tokens of row b. O(1): no copy, no allocation."""
-        if not torch.is_tensor(n):
-            n = torch.full_like(self.lengths, int(n))
-        self.lengths -= n.to(self.lengths.device, self.lengths.dtype)
-        if bool((self.lengths < 0).any()):
+        """Drop the last n[b] tokens of row b. O(1): no copy, no allocation.
+
+        Pass a Python list where possible -- handing in a CUDA tensor forces a
+        sync here, and the caller has usually already moved those counts to the
+        host to decide which tokens to emit.
+        """
+        if isinstance(n, int):
+            n_cpu = torch.full((self.batch_size,), n, dtype=torch.long)
+        elif torch.is_tensor(n):
+            n_cpu = n.detach().to("cpu", torch.long)
+        else:
+            n_cpu = torch.as_tensor(list(n), dtype=torch.long)
+        self.lengths_cpu -= n_cpu
+        if bool((self.lengths_cpu < 0).any()):
             raise RuntimeError("RaggedCache.rollback below zero")
+        self._push()
 
     # ---- Cache interface ---------------------------------------------------
     def get_seq_length(self, layer_idx: int = 0):
-        return int(self.lengths.max().item())
+        return self.max_len
 
     def reset(self):
-        self.lengths.zero_()
+        self.lengths_cpu.zero_()
+        self._push()
         for layer in self.layers:
             if layer.is_initialized:
                 layer.keys.zero_()

@@ -119,6 +119,54 @@ def summarize(results, wall, concurrency):
     }
 
 
+def scrape_spec_metrics(base_url):
+    """Read vLLM's own speculative-decoding counters off /metrics.
+
+    More reliable than parsing the "SpecDecoding metrics" log line, which only
+    appears at INFO and is easy to lose to a log-level default, and it gives
+    exact counters rather than a rounded mean.
+    """
+    import re
+    import urllib.request
+    want = {
+        "vllm:spec_decode_num_draft_tokens": "draft_tokens",
+        "vllm:spec_decode_num_accepted_tokens": "accepted_tokens",
+        "vllm:spec_decode_num_drafts": "drafts",
+    }
+    out = {}
+    try:
+        with urllib.request.urlopen(f"{base_url}/metrics", timeout=30) as r:
+            body = r.read().decode("utf-8", "ignore")
+    except Exception:
+        return out
+    for line in body.splitlines():
+        if line.startswith("#"):
+            continue
+        for key, name in want.items():
+            if line.startswith(key):
+                m = re.search(r"\s([0-9.eE+-]+)$", line.strip())
+                if m:
+                    # per-position counters share a prefix; sum them
+                    out[name] = out.get(name, 0.0) + float(m.group(1))
+    return out
+
+
+def spec_delta(before, after):
+    d = {k: after.get(k, 0.0) - before.get(k, 0.0) for k in set(before) | set(after)}
+    drafted, accepted, drafts = (d.get("draft_tokens", 0.0),
+                                 d.get("accepted_tokens", 0.0), d.get("drafts", 0.0))
+    if drafted <= 0 and drafts <= 0:
+        return {}
+    return {
+        "spec_draft_tokens": drafted, "spec_accepted_tokens": accepted,
+        "spec_drafts": drafts,
+        # fraction of drafted tokens that survived: "was the draft work wasted"
+        "spec_acceptance_rate": accepted / drafted if drafted else 0.0,
+        # tokens committed per verify step; must exceed 1.0 to be worth anything
+        "spec_mean_accepted_len": (accepted + drafts) / drafts if drafts else 0.0,
+    }
+
+
 def gpu_memory_gb():
     import subprocess
     try:
@@ -163,9 +211,11 @@ def main():
     rows = []
     for conc in [int(c) for c in args.concurrency.split(",") if c]:
         log(f"concurrency {conc}: {len(prompts)} requests")
+        m_before = scrape_spec_metrics(args.base_url)
         results, wall = asyncio.run(run_level(
             args.base_url, model, prompts, conc, args.rate, args.max_tokens, args.temperature))
         s = summarize(results, wall, conc)
+        s.update(spec_delta(m_before, scrape_spec_metrics(args.base_url)))
         s["label"] = args.label
         s["gpu_mem_gb"] = gpu_memory_gb()
         if s.get("output_tok_per_s"):
@@ -176,9 +226,13 @@ def main():
             s["cost_assumption_usd_gpu_hour"] = args.cost_per_gpu_hour
         rows.append(s)
         if s.get("ok"):
+            spec = ""
+            if s.get("spec_drafts"):
+                spec = (f"  alpha={s['spec_acceptance_rate']:.3f} "
+                        f"acc/round={s['spec_mean_accepted_len']:.2f}")
             log(f"  {s['output_tok_per_s']:7.1f} tok/s  {s['req_per_s']:6.2f} req/s  "
                 f"ttft p50={s['ttft_p50']*1000:6.1f}ms p95={s['ttft_p95']*1000:6.1f}ms  "
-                f"itl={s['itl_mean']*1000:5.2f}ms  ${s['usd_per_1m_tokens']:.2f}/1M")
+                f"itl={s['itl_mean']*1000:5.2f}ms  ${s['usd_per_1m_tokens']:.2f}/1M" + spec)
         else:
             log(f"  FAILED: {s.get('error')}")
 

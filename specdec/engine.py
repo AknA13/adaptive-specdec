@@ -132,13 +132,18 @@ class RunStats:
 class SpecDecodeEngine:
     """Speculative decoding for a (target, draft) pair sharing a tokenizer."""
 
-    def __init__(self, target, draft, tokenizer, device=None, capacity=4096, nvtx=False):
+    def __init__(self, target, draft, tokenizer, device=None, capacity=4096, nvtx=False,
+                 time_phases=False):
         self.target = target.eval()
         self.draft = draft.eval()
         self.tok = tokenizer
         self.device = device or next(target.parameters()).device
         self.capacity = capacity
         self.nvtx = nvtx
+        # Per-phase timing needs a device sync around the draft loop and the
+        # verify forward. Two syncs per round is a real cost at these token
+        # rates, so it is opt-in: the profiler turns it on, benchmarks do not.
+        self.time_phases = time_phases
         tcfg, dcfg = target.config, draft.config
         if tcfg.vocab_size != dcfg.vocab_size:
             raise ValueError(
@@ -255,7 +260,7 @@ class SpecDecodeEngine:
                 self._forward(self.draft, dcache, feed)
                 dcache.advance(1)
                 st.draft_forwards += 1
-            if self.device.type == "cuda":
+            if self.time_phases and self.device.type == "cuda":
                 torch.cuda.synchronize()
             st.t_draft += time.perf_counter() - d0
 
@@ -269,7 +274,7 @@ class SpecDecodeEngine:
                 vlog = self._forward(self.target, tcache, verify_in)
                 tcache.advance(k_eff + 1)
                 st.target_forwards += 1
-            if self.device.type == "cuda":
+            if self.time_phases and self.device.type == "cuda":
                 torch.cuda.synchronize()
             st.t_target += time.perf_counter() - v0
 
@@ -297,13 +302,16 @@ class SpecDecodeEngine:
                 y_bonus = sample_from_probs(ps[k_eff], gen)
                 y = torch.where(all_acc, y_bonus, y_res)
 
-                # 6: commit. Both caches are at n+1+k_eff; keep n+1+n_acc.
-                drop = (k_eff - n_acc).clamp_min(0)
+                # One host sync per round, here. The accepted counts are needed
+                # on the CPU anyway to decide which tokens to emit, so reuse
+                # that transfer for the rollback instead of handing the cache a
+                # CUDA tensor and paying for a second one.
+                n_acc_l = n_acc.tolist()
+                drop = [max(0, k_eff - a) for a in n_acc_l]
                 tcache.rollback(drop)
                 dcache.rollback(drop)
 
             # ---- record ------------------------------------------------------
-            n_acc_l = n_acc.tolist()
             st.rounds += 1
             st.proposed += k_eff * B
             st.accepted += sum(n_acc_l)

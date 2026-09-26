@@ -1,0 +1,55 @@
+{
+  "args": {
+    "target": "Qwen/Qwen3-8B",
+    "draft": "Qwen/Qwen3-0.6B",
+    "dataset": "math500",
+    "n": 1,
+    "max_new": 32,
+    "k": 4,
+    "batch_sizes": "1",
+    "ctx": 512,
+    "capacity": 2048,
+    "tag": "graphs"
+  },
+  "run": {
+    "rounds": 10,
+    "emitted": 32,
+    "t_draft": 1.5806597002083436,
+    "t_target": 0.4518298188922927,
+    "t_total": 2.139227225910872,
+    "draft_forwards": 51,
+    "target_forwards": 11,
+    "acceptance_rate": 0.625,
+    "alpha_conditional": 0.8333333333333334,
+    "mean_accepted_len": 3.2,
+    "tokens_per_s": 14.958672745189357,
+    "alpha_by_position": [
+      0.8,
+      0.75,
+      1.0,
+      0.8333333333333334
+    ],
+    "t_other": 0.10673770681023598
+  },
+  "cost_ratio": [
+    {
+      "batch": 1,
+      "t_draft_ms": 21.280926179606467,
+      "t_target_ms": 27.970192478969693,
+      "c": 0.7608430365864386,
+      "k_star": {
+        "0.5": 1,
+        "0.6": 1,
+        "0.7": 1,
+        "0.8": 2,
+        "0.9": 4
+      }
+    }
+  ],
+  "cuda_graph": {
+    "eager_ms": 21.37104290071875,
+    "graph_ms": 4.667752038221806,
+    "speedup": 4.5784443401711,
+    "launch_overhead_frac": 0.7815852010635933
+  }
+}

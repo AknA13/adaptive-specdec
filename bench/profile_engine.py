@@ -86,7 +86,8 @@ def main():
 
     # ---- 1. where the time goes inside a round --------------------------
     log("profiling a speculative run")
-    eng = SpecDecodeEngine(target, draft, tok, device=dev, capacity=args.capacity, nvtx=True)
+    eng = SpecDecodeEngine(target, draft, tok, device=dev, capacity=args.capacity, nvtx=True,
+                          time_phases=True)
     problems = load_problems(args.dataset, "test", args.n)
     texts = [build_prompt(tok, p["problem"]) for p in problems]
     enc = [tok(t, add_special_tokens=False)["input_ids"] for t in texts]
@@ -173,7 +174,8 @@ def main():
             # the engine would have to satisfy to use graphs for real.
             step = torch.randint(0, 1000, (B, 1), device=dev)
             pos = cache.positions(1).clone()
-            mask = cache.attn_mask(1, draft.dtype).clone()
+            _m = cache.attn_mask(1, draft.dtype)      # None when lengths are uniform
+            mask = _m.clone() if _m is not None else None
             cpos = cache.cache_position(1).clone()
 
             def one():

@@ -104,10 +104,17 @@ wait_free() {
   die "GPU never freed ${need}MiB"
 }
 
-# kill only THIS job's leftover vLLM engine processes (never a sibling job's)
+# Kill only THIS job's leftover vLLM engine processes (never a sibling job's).
+#
+# The patterns must not match our own scripts. A bare `-f vllm` does: this file
+# is sourced by scripts/05_bench_vllm.sh, whose command line contains "vllm", so
+# the stage pkill'd itself and exited 143 right after the first server run.
 clean_vllm() {
   local sid; sid=$(ps -o sess= -p $$ | tr -d ' ')
-  [ -n "$sid" ] && { pkill -s "$sid" -f EngineCore 2>/dev/null; pkill -s "$sid" -f vllm 2>/dev/null; }
+  [ -n "$sid" ] || return 0
+  for pat in 'vllm\.entrypoints' 'VLLM::EngineCore' 'EngineCore_DP' 'from multiprocessing.spawn'; do
+    pkill -s "$sid" -f "$pat" 2>/dev/null
+  done
   sleep 3; return 0
 }
 

@@ -23,6 +23,12 @@ mkdir -p "$TMP"
 # The plugin is inert unless this is set, so other jobs sharing the `rl` env
 # are never patched.
 export SPECDEC_PLUGIN=1
+# INFO so the bring-up checkpoints are actually observable: the "GPU KV cache
+# size" line is what proves all 64 layers landed in one cache group.
+# Forced, not defaulted: slurm/submit.sh already exports WARNING into the job
+# script, so a ${VAR:-INFO} default would never take effect and the bring-up
+# checkpoints would be invisible.
+export VLLM_LOGGING_LEVEL=INFO
 
 SERVER_PID=""
 stop_server() {
@@ -61,8 +67,8 @@ spec_cfg() {  # spec_cfg <k>
 # ---- bring-up checkpoints -------------------------------------------------
 step "checkpoint 1-4: engine starts with a draft model and one KV cache group"
 start_server "k1" --speculative-config "$(spec_cfg 1)" --enforce-eager || die "server failed to start with draft_model"
-grep -iE "GPU KV cache size|Duplicate layer name|DraftModelProposer|adaptive-specdec" \
-     "$REPO/logs/vllm_k1.out" | tail -10
+grep -iE "GPU KV cache size|Duplicate layer name|DraftModelProposer|adaptive-specdec|maximum concurrency" \
+     "$REPO/logs/vllm_k1.out" | tail -12
 
 step "checkpoint 5: greedy identity at k=1"
 run "$PY" -m bench.smoke_identity --base-url "$URL" --dump "$TMP/spec_k1.json" --n 16

@@ -1,0 +1,37 @@
+{
+  "rows": [
+    {
+      "concurrency": 1,
+      "requests": 16,
+      "ok": 16,
+      "wall_s": 56.29372267704457,
+      "output_tokens": 1172,
+      "output_tok_per_s": 20.81937282285859,
+      "req_per_s": 0.2842235197659876,
+      "ttft_p50": 0.06904900702647865,
+      "ttft_p95": 2.2695594140095636,
+      "itl_mean": 0.04585187418860058,
+      "itl_p95": 0.04638444900047034,
+      "e2e_p50": 3.2582190190441906,
+      "e2e_p95": 5.767032193951309,
+      "label": "smoke_k4",
+      "gpu_mem_gb": 119.9755859375,
+      "usd_per_1m_tokens": 46.697959179383766,
+      "cost_assumption_usd_gpu_hour": 3.5
+    }
+  ],
+  "args": {
+    "base_url": "http://127.0.0.1:8617",
+    "model": null,
+    "label": "smoke_k4",
+    "dataset": "math500",
+    "split": "test",
+    "n": 16,
+    "concurrency": "1",
+    "rate": 0.0,
+    "max_tokens": 256,
+    "temperature": 0.0,
+    "cost_per_gpu_hour": 3.5,
+    "seed": 0
+  }
+}

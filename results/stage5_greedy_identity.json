@@ -1,0 +1,7 @@
+{
+  "n": 16,
+  "n_diff": 0,
+  "identical": true,
+  "a": "/tmp/spec-cache-vllm-3612382/tmp/specdec-serve-3771155/nospec.json",
+  "b": "/tmp/spec-cache-vllm-3612382/tmp/specdec-serve-3771155/spec_k1.json"
+}
