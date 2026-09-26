@@ -1,0 +1,19 @@
+{
+  "total": 6,
+  "kept": 1,
+  "kept_frac": 0.16666666666666666,
+  "rejected": {
+    "wrong_answer": 1,
+    "duplicate_problem": 1,
+    "no_think_close": 1,
+    "truncated": 1,
+    "no_boxed_answer": 1
+  },
+  "completion_tokens": {
+    "mean": 50.0,
+    "p50": 50,
+    "p90": 50,
+    "max": 50
+  },
+  "out": "/tmp/tmphrczwtps/traces/filtered.jsonl"
+}
