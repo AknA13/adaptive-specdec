@@ -1,6 +1,7 @@
 #!/bin/bash
 # Stage 3: FSDP2 draft training. Trains both ablation arms unless --name is given.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+need_data
 need_file "$DATA/traces/filtered.jsonl" "run scripts/02_filter.sh first"
 NG=$(n_gpus); [ "$NG" -lt 1 ] && die "no GPU visible"
 PORT="${SPEC_MASTER_PORT:-$((29500 + RANDOM % 1000))}"

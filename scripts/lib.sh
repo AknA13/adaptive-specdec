@@ -64,6 +64,18 @@ report_soft_fails() {
 need_file() { [ -e "$1" ] || die "missing required path: $1${2:+  ($2)}"; }
 need_cmd()  { command -v "$1" >/dev/null 2>&1 || die "command not found: $1"; }
 
+# Every GPU stage must call this first. $SPEC_DATA_ROOT lives on node-local
+# /data, which does not exist on the login node -- without the guard a stage run
+# there dies with a raw "PermissionError: '/data'" from somewhere deep in a
+# python module instead of saying what is wrong. NOT called from lib.sh's body,
+# because slurm/submit.sh legitimately sources this on the login node.
+need_data() {
+  [ -d "$(dirname "$DATA")" ] || die "no $(dirname "$DATA") on $(hostname) -- \
+SPEC_DATA_ROOT is node-local storage, so run this stage through slurm/submit.sh
+     (from another node the same data reads as /net/<node>$(dirname "$DATA"))"
+  mkdir -p "$DATA" 2>/dev/null || die "cannot write $DATA on $(hostname)"
+}
+
 # Stages are idempotent: skip if the output already exists (preemption-safe).
 # usage:  have_output "$DATA/traces/filtered.jsonl" && { info "skip"; exit 0; }
 have_output() { [ -s "$1" ]; }

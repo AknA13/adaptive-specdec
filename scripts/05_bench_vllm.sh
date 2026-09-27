@@ -8,6 +8,7 @@
 # cannot change speculative settings on a live engine, and leaving a 16 GB
 # model resident between runs would distort the memory numbers.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+need_data
 SMOKE=0; [ "${1:-}" = "--smoke" ] && { SMOKE=1; shift; }
 NG=$(n_gpus); [ "$NG" -lt 1 ] && die "no GPU visible"
 wait_free "${SPEC_MIN_FREE_MIB:-40000}"

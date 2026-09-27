@@ -1,6 +1,7 @@
 #!/bin/bash
 # Stage 4: from-scratch engine benchmark. --quick for a smoke-sized grid.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+need_data
 QUICK=0; [ "${1:-}" = "--quick" ] && { QUICK=1; shift; }
 NG=$(n_gpus); [ "$NG" -lt 1 ] && die "no GPU visible"
 # This partition is OverSubscribe=YES:4, so SLURM will happily hand out a GPU

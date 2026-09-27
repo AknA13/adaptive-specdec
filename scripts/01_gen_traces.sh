@@ -1,6 +1,7 @@
 #!/bin/bash
 # Stage 1: teacher reasoning traces + top-k logprobs. Idempotent; --resume safe.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+need_data
 DATASET="${SPEC_TRACE_DATASET:-gsm8k}"; SPLIT="${SPEC_TRACE_SPLIT:-train}"
 N="${SPEC_TRACE_N:-0}"; SHARDS="${SPEC_TRACE_SHARDS:-$(n_gpus)}"
 [ "${SHARDS:-0}" -lt 1 ] && SHARDS=1
