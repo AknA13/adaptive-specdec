@@ -83,6 +83,18 @@ def main():
                     missing.append(f"{sh.name} -> {tok}")
     check("no script points at a missing .py", not missing, "; ".join(missing[:5]))
 
+    print("[integrity] no stage invokes a bare interpreter/launcher")
+    # PATH here resolves `torchrun`/`python` to the system miniforge 3.13, which
+    # imports a broken ~/.local transformers. Every stage must go through $PY.
+    import re as _re
+    offenders = []
+    for sh in sorted((REPO / "scripts").glob("*.sh")):
+        for n, line in enumerate(sh.read_text().splitlines(), 1):
+            code = line.split("#", 1)[0]
+            if _re.search(r"(^\s*|[;&|]\s*|\brun\s+|\brun_soft\s+)(torchrun|python3?)\s", code):
+                offenders.append(f"{sh.name}:{n}")
+    check("no bare torchrun/python in scripts/", not offenders, ", ".join(offenders))
+
     print("[integrity] config is importable and its gates are sane")
     import config as C
     check("config imports", True, C.describe())

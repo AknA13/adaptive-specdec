@@ -148,7 +148,11 @@ def scrape_spec_metrics(base_url):
             # vllm:spec_decode_num_accepted_tokens_per_pos, whose buckets sum to
             # the same total -- summing both reported an acceptance rate of
             # 1.56, i.e. exactly 2x, which is how the bug was caught.
-            if re.match(re.escape(key) + r"(\{|\s)", line):
+            # Prometheus counters are exported with a _total suffix, so the
+            # name alone never matches. Allow it, but keep the anchor so
+            # ..._per_pos_total (whose buckets sum to the same total) is still
+            # excluded -- summing both is what reported alpha=1.56.
+            if re.match(re.escape(key) + r"(_total)?(\{|\s)", line):
                 m = re.search(r"\s([0-9.eE+-]+)$", line.strip())
                 if m:
                     out[name] = out.get(name, 0.0) + float(m.group(1))

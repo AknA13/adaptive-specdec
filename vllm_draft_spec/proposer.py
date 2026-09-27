@@ -34,6 +34,7 @@ num_tokens and of batch_size -- so varying it costs nothing.
 """
 import copy
 import os
+import time
 
 import torch
 
@@ -59,6 +60,13 @@ class DraftModelProposer(EagleProposer):
         self.k = self.k_max
         self._pending_counts = None      # GPU tensor: 1 + accepted, previous step
         self._pending_drafted = None     # list[int]: drafted per request
+        # Cost-ratio telemetry. Without this the controller optimises against
+        # its c_init and picks k for a draft that is cheaper than the real one:
+        # measured on an H200, leaving c at 0.15 made the adaptive policy track
+        # fixed k=8 (0.32x AR) when the true c ~ 1.6 calls for k=1.
+        self._t_prev_enter = None
+        self._t_draft_prev = None
+        self._k_prev = None
         self.controller = self._make_controller()
         logger.info("adaptive-specdec: DraftModelProposer k_max=%d controller=%s",
                     self.k_max, getattr(self.controller, "name", "fixed"))
@@ -76,14 +84,16 @@ class DraftModelProposer(EagleProposer):
             return None
         try:
             from specdec.controller import make_controller
-            return make_controller(spec, k_max=self.k_max)
+            # extra_fwd=0: vLLM's drafter rides the target's token stream and
+            # needs no commit-only forward, unlike the from-scratch engine.
+            return make_controller(spec, k_max=self.k_max, extra_fwd=0)
         except Exception as e:
             logger.warning("adaptive-specdec: controller %r unavailable (%s); "
                            "falling back to fixed k=%d", spec, e, self.k_max)
             return None
 
-    def _select_k(self):
-        """Choose this step's k, folding in last step's acceptance."""
+    def _select_k(self, t_draft_fwd=None, t_target_fwd=None):
+        """Choose this step's k, folding in last step's acceptance and cost."""
         if self.controller is None:
             return self.k_max
         if self._pending_counts is not None and self._pending_drafted is not None:
@@ -95,13 +105,36 @@ class DraftModelProposer(EagleProposer):
                 drafted = self._pending_drafted
                 n_acc = [max(0, int(c) - 1) for c in counts[:len(drafted)]]
                 kk = max(1, max(drafted)) if drafted else self.k
-                self.controller.update(kk, n_acc, dt=1.0)
+                self.controller.update(kk, n_acc, dt=1.0,
+                                       t_draft_fwd=t_draft_fwd,
+                                       t_target_fwd=t_target_fwd)
             except Exception as e:
                 logger.warning("adaptive-specdec: telemetry read failed: %s", e)
             self._pending_counts = None
             self._pending_drafted = None
         self.k = max(1, min(self.k_max, int(self.controller.propose_k())))
         return self.k
+
+    def _step_costs(self, now):
+        """Per-forward draft and target cost, from wall time between steps.
+
+        The gap between consecutive propose() entries is one whole engine step:
+        the previous step's drafting, then the target forward, sampling and
+        scheduling. Subtracting the drafting we timed ourselves leaves the
+        target side. Wall clock rather than CUDA events because the drafter is
+        launch-bound here, so launch time is the cost that matters -- and
+        because reading an event would sync the very pipeline we are measuring.
+        """
+        if self._t_prev_enter is None or self._t_draft_prev is None:
+            return None, None
+        period = now - self._t_prev_enter
+        # An idle gap between requests is not a step; it would read as an
+        # enormous target cost and drive k to the ceiling.
+        if period <= 0 or period > 1.0:
+            return None, None
+        t_target = max(1e-5, period - self._t_draft_prev)
+        t_draft_fwd = self._t_draft_prev / max(1, self._k_prev or 1)
+        return t_draft_fwd, t_target
 
     # ---- telemetry hooks ---------------------------------------------------
     def prepare_inputs_padded(self, common_attn_metadata, spec_decode_metadata,
@@ -116,7 +149,9 @@ class DraftModelProposer(EagleProposer):
         # len(sampled)-1 and it is already on the CPU, so this is free.
         if self.controller is not None and sampled_token_ids:
             n_acc = [max(0, len(s) - 1) for s in sampled_token_ids]
-            self.controller.update(max(1, self.k), n_acc, dt=1.0)
+            t_d, t_t = self._step_costs(time.perf_counter())
+            self.controller.update(max(1, self.k), n_acc, dt=1.0,
+                                   t_draft_fwd=t_d, t_target_fwd=t_t)
         return super().prepare_next_token_ids_cpu(sampled_token_ids, *a, **kw)
 
     # ---- model loading -----------------------------------------------------
@@ -186,7 +221,10 @@ class DraftModelProposer(EagleProposer):
         if last_token_indices is None:
             last_token_indices = common_attn_metadata.query_start_loc[1:] - 1
 
-        k = self._select_k()
+        _t_enter = time.perf_counter()
+        _t_draft_fwd, _t_target_fwd = self._step_costs(_t_enter)
+        k = self._select_k(_t_draft_fwd, _t_target_fwd)
+        self._t_prev_enter = _t_enter
 
         # Shift the input ids by one, then overwrite each sequence's last slot
         # with its freshly sampled token:
@@ -224,6 +262,8 @@ class DraftModelProposer(EagleProposer):
         logits = self.model.compute_logits(hidden_states[last_token_indices])
         draft_token_ids = logits.argmax(dim=-1)
         if k == 1:
+            self._t_draft_prev = time.perf_counter() - _t_enter
+            self._k_prev = 1
             return draft_token_ids.view(-1, 1)
 
         positions = target_positions[last_token_indices]
@@ -291,6 +331,8 @@ class DraftModelProposer(EagleProposer):
             logits = self.model.compute_logits(hidden_states[:batch_size])
             draft_token_ids_list.append(logits.argmax(dim=-1))
 
+        self._t_draft_prev = time.perf_counter() - _t_enter
+        self._k_prev = k
         return torch.stack(draft_token_ids_list, dim=1)
 
     # ---- warmup / capture --------------------------------------------------

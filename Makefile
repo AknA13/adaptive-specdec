@@ -22,7 +22,7 @@ test:
 	@set -e; rc=0; \
 	for t in tests/test_repo_integrity.py tests/test_controller.py \
 	         tests/test_kv_rollback.py tests/test_greedy_equivalence.py \
-	         tests/test_losses.py tests/test_vllm_patches.py \
+	         tests/test_losses.py tests/test_vllm_patches.py tests/test_bench_metrics.py \
 	         tests/test_rejection_sampling.py; do \
 	  echo; echo "===== $$t ====="; \
 	  $(PY) $$t || rc=1; \

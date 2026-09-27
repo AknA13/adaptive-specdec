@@ -1,0 +1,17 @@
+{
+  "total": 3000,
+  "kept": 2015,
+  "kept_frac": 0.6716666666666666,
+  "rejected": {
+    "too_long": 712,
+    "truncated": 262,
+    "wrong_answer": 11
+  },
+  "completion_tokens": {
+    "mean": 1351.938957816377,
+    "p50": 1343,
+    "p90": 1835,
+    "max": 2048
+  },
+  "out": "/data/akshay_anand/specdec/traces/filtered.jsonl"
+}

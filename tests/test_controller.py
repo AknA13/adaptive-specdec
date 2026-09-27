@@ -66,6 +66,22 @@ def main():
             ok &= best_k(a, c, 8) == bf
     check("best_k agrees with brute force over the grid", ok)
 
+    print("[cost model] extra_fwd distinguishes the two runtimes")
+    # The engine runs k+1 draft forwards (the last only commits the final
+    # drafted token into the draft cache); vLLM's drafter rides the target's
+    # token stream and runs k. That fixed extra forward is a sunk cost per
+    # round, so the engine amortises it by drafting LONGER: engine k* >= vLLM
+    # k* at the same alpha and c. (Asserting it the other way round is the
+    # intuitive-but-wrong reading, and this test caught exactly that.)
+    for a in (0.6, 0.78, 0.9):
+        for c in (0.15, 0.5, 1.0, 1.6):
+            ke, kv = best_k(a, c, 8, 1), best_k(a, c, 8, 0)
+            check(f"alpha={a} c={c}: engine k*={ke} >= vllm k*={kv}", ke >= kv)
+    check("a cheap draft wants a long run", best_k(0.78, 0.15, 8, 0) >= 4,
+          f"k*={best_k(0.78, 0.15, 8, 0)}")
+    check("a draft costing more than the target wants k=1",
+          best_k(0.78, 1.6, 8, 0) == 1, f"k*={best_k(0.78, 1.6, 8, 0)}")
+
     print("[estimator] alpha uses positions reached, not positions proposed")
     ctl = EWMAAnalytic(beta=0.5, warmup=0)
     # 4 proposed, 1 accepted => positions evaluated = 2, alpha = 1/2, not 1/4.

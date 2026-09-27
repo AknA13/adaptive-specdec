@@ -44,19 +44,27 @@ __all__ = ["Controller", "FixedK", "EWMAAnalytic", "ConfidenceEarlyExit",
            "UCBBandit", "expected_speedup", "best_k", "make_controller"]
 
 
-def expected_speedup(k, alpha, c):
-    """Expected tokens per round divided by the cost of that round."""
+def expected_speedup(k, alpha, c, extra_fwd=1):
+    """Expected tokens per round divided by the cost of that round.
+
+    extra_fwd is how many draft forwards a round costs beyond k. The
+    from-scratch engine runs k+1 (the last one only commits the final drafted
+    token into the draft cache), so extra_fwd=1. vLLM's drafter rides the
+    target's token stream and needs no commit pass, so extra_fwd=0 there.
+    Getting this wrong biases k the same direction as mis-measuring c.
+    """
     k = max(1, int(k))
     if alpha >= 1.0 - 1e-9:
         tokens = float(k + 1)
     else:
         tokens = (1.0 - alpha ** (k + 1)) / (1.0 - alpha)
-    return tokens / ((k + 1) * c + 1.0)
+    return tokens / ((k + extra_fwd) * c + 1.0)
 
 
-def best_k(alpha, c, k_max=8):
+def best_k(alpha, c, k_max=8, extra_fwd=1):
     """argmax over k in [1, k_max]. k_max is small, so just enumerate."""
-    return max(range(1, int(k_max) + 1), key=lambda k: expected_speedup(k, alpha, c))
+    return max(range(1, int(k_max) + 1),
+               key=lambda k: expected_speedup(k, alpha, c, extra_fwd))
 
 
 class Controller:
@@ -109,7 +117,8 @@ class EWMAAnalytic(Controller):
 
     name = "ewma-analytic"
 
-    def __init__(self, k_max=8, beta=0.99, k_init=4, c_init=0.15, warmup=3):
+    def __init__(self, k_max=8, beta=0.99, k_init=4, c_init=0.15, warmup=3, extra_fwd=1):
+        self.extra_fwd = int(extra_fwd)
         self.k_max = int(k_max)
         self.beta = float(beta)
         self.k_init = int(k_init)
@@ -130,7 +139,7 @@ class EWMAAnalytic(Controller):
         if self._rounds < self.warmup:
             self._last_k = self.k_init
         else:
-            self._last_k = best_k(self.alpha, self.c, self.k_max)
+            self._last_k = best_k(self.alpha, self.c, self.k_max, self.extra_fwd)
         return self._last_k
 
     def update(self, k, n_accepted, dt, t_draft_fwd=None, t_target_fwd=None):
@@ -146,7 +155,8 @@ class EWMAAnalytic(Controller):
 
     def state(self):
         return {"name": self.name, "alpha": self.alpha, "c": self.c,
-                "k": self._last_k, "rounds": self._rounds}
+                "k": self._last_k, "rounds": self._rounds,
+                "extra_fwd": self.extra_fwd}
 
 
 class ConfidenceEarlyExit(Controller):
@@ -221,7 +231,7 @@ class UCBBandit(Controller):
                 "mu": {str(k): round(v, 2) for k, v in self.mu.items()}}
 
 
-def make_controller(spec, k_max=8, tau=0.3):
+def make_controller(spec, k_max=8, tau=0.3, extra_fwd=1):
     """Build a controller from a benchmark-grid label.
 
     'ar' | 'fixed3' | 'ewma' | 'ewma+exit' | 'ucb'
@@ -233,7 +243,7 @@ def make_controller(spec, k_max=8, tau=0.3):
     if s.startswith("fixed"):
         base = FixedK(int(s[len("fixed"):]))
     elif s == "ewma":
-        base = EWMAAnalytic(k_max=k_max)
+        base = EWMAAnalytic(k_max=k_max, extra_fwd=extra_fwd)
     elif s == "ucb":
         base = UCBBandit(k_max=k_max)
     else:

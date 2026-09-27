@@ -24,6 +24,9 @@ DRAFT="${SPEC_DRAFT_ID:-Qwen/Qwen3-0.6B}"
 export SPEC_DATA_ROOT="$DATA" SPEC_TARGET_ID="$TARGET" SPEC_DRAFT_ID="$DRAFT"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export PYTHONUNBUFFERED=1
+# ~/.local/lib/python3.13/site-packages holds an unrelated (broken) transformers.
+# Any stage that escapes the conda env picks it up and dies on a version check.
+export PYTHONNOUSERSITE=1
 # torch >=2.9 renamed this; export both so either version picks it up
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"

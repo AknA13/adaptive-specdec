@@ -1,0 +1,15 @@
+{
+  "name": "sft",
+  "base": "Qwen/Qwen3-0.6B",
+  "lam": 0.0,
+  "steps": 126,
+  "total_steps": 126,
+  "epochs": 2,
+  "lr": 0.0001,
+  "world": 2,
+  "seqs": 2015,
+  "batch_size": 4,
+  "grad_accum": 4,
+  "wall_s": 296.7,
+  "out": "/data/akshay_anand/specdec/ckpt/sft"
+}
