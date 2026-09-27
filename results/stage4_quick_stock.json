@@ -9,13 +9,13 @@
       "draft_forwards": 0,
       "target_forwards": 512,
       "t_draft": 0.0,
-      "t_target": 12.940743249026127,
-      "t_total": 12.940743249026127,
+      "t_target": 12.929160930914804,
+      "t_total": 12.929160930914804,
       "offered_at": [],
       "accepted_at": [],
       "k_history": [],
-      "wall_s": 12.987896192003973,
-      "tokens_per_s": 39.42131908285608,
+      "wall_s": 12.988848824985325,
+      "tokens_per_s": 39.41842782981027,
       "acceptance_rate": 0.0,
       "alpha_conditional": 0.0,
       "alpha_by_position": [],
@@ -37,9 +37,9 @@
       "reached": 271,
       "draft_forwards": 550,
       "target_forwards": 279,
-      "t_draft": 9.904325345763937,
-      "t_target": 7.21603338920977,
-      "t_total": 17.889003279269673,
+      "t_draft": 9.762979299179278,
+      "t_target": 7.126863885321654,
+      "t_total": 17.646875511971302,
       "offered_at": [
         271
       ],
@@ -319,8 +319,8 @@
         1,
         1
       ],
-      "wall_s": 17.898103824001737,
-      "tokens_per_s": 28.60638227572449,
+      "wall_s": 17.655388743965887,
+      "tokens_per_s": 28.999644665144356,
       "acceptance_rate": 0.8819188191881919,
       "alpha_conditional": 0.8819188191881919,
       "alpha_by_position": [
@@ -335,7 +335,7 @@
       "prompt_len": "short",
       "batch_size": 1,
       "draft": "stock",
-      "speedup_vs_ar": 0.7256576629411954,
+      "speedup_vs_ar": 0.7356875010426802,
       "greedy_identical": false,
       "n_diff": 1,
       "n_bf16_ties": 1,
@@ -369,9 +369,9 @@
       "reached": 433,
       "draft_forwards": 633,
       "target_forwards": 133,
-      "t_draft": 11.418464115820825,
-      "t_target": 3.371828062343411,
-      "t_total": 15.37810579687357,
+      "t_draft": 11.237132124369964,
+      "t_target": 3.3198319773655385,
+      "t_total": 15.137641913839616,
       "offered_at": [
         125,
         110,
@@ -511,8 +511,8 @@
         4,
         4
       ],
-      "wall_s": 15.385294623090886,
-      "tokens_per_s": 33.278530736198526,
+      "wall_s": 15.145479113911279,
+      "tokens_per_s": 33.805467370769584,
       "acceptance_rate": 0.788,
       "alpha_conditional": 0.9099307159353349,
       "alpha_by_position": [
@@ -530,7 +530,7 @@
       "prompt_len": "short",
       "batch_size": 1,
       "draft": "stock",
-      "speedup_vs_ar": 0.8441759816878125,
+      "speedup_vs_ar": 0.8576056740955084,
       "greedy_identical": false,
       "n_diff": 2,
       "n_bf16_ties": 2,
@@ -576,15 +576,15 @@
     },
     {
       "rounds": 117,
-      "proposed": 486,
+      "proposed": 487,
       "accepted": 397,
       "emitted": 512,
       "reached": 435,
-      "draft_forwards": 611,
+      "draft_forwards": 612,
       "target_forwards": 125,
-      "t_draft": 11.026910938206129,
-      "t_target": 3.163780680508353,
-      "t_total": 14.72456964920275,
+      "t_draft": 10.889170291484334,
+      "t_target": 3.12710775481537,
+      "t_total": 14.546074423007667,
       "offered_at": [
         117,
         106,
@@ -652,7 +652,7 @@
         5,
         5,
         5,
-        4,
+        5,
         4,
         4,
         4,
@@ -724,9 +724,9 @@
         4,
         3
       ],
-      "wall_s": 14.730977774015628,
-      "tokens_per_s": 34.7566881068228,
-      "acceptance_rate": 0.8168724279835391,
+      "wall_s": 14.553767789970152,
+      "tokens_per_s": 35.179893439886335,
+      "acceptance_rate": 0.8151950718685832,
       "alpha_conditional": 0.9126436781609195,
       "alpha_by_position": [
         0.905982905982906,
@@ -739,7 +739,7 @@
         1.0
       ],
       "mean_accepted_len": 4.3760683760683765,
-      "mean_k": 4.153846153846154,
+      "mean_k": 4.162393162393163,
       "peak_mem_gb": 29.44598528,
       "accuracy": 0.0,
       "method": "ewma",
@@ -747,7 +747,7 @@
       "prompt_len": "short",
       "batch_size": 1,
       "draft": "stock",
-      "speedup_vs_ar": 0.88167237716655,
+      "speedup_vs_ar": 0.89247327650347,
       "greedy_identical": false,
       "n_diff": 2,
       "n_bf16_ties": 2,
@@ -812,7 +812,7 @@
     "compile": ""
   },
   "gate_failures": [
-    "G5: best greedy speedup 0.88x < 1.5x"
+    "G5: best greedy speedup 0.89x < 1.5x"
   ],
-  "g5_best_speedup": 0.88167237716655
+  "g5_best_speedup": 0.89247327650347
 }

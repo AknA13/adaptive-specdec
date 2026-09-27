@@ -1,0 +1,42 @@
+{
+  "rows": [
+    {
+      "concurrency": 1,
+      "requests": 16,
+      "ok": 16,
+      "wall_s": 55.169919532956555,
+      "output_tokens": 1187,
+      "output_tok_per_s": 21.51534767584586,
+      "req_per_s": 0.29001311104762745,
+      "ttft_p50": 0.06842623103875667,
+      "ttft_p95": 2.514035055995919,
+      "itl_mean": 0.04410606600357304,
+      "itl_p95": 0.04515978996641934,
+      "e2e_p50": 3.2809773880289868,
+      "e2e_p95": 5.511770359007642,
+      "spec_draft_tokens": 4688.0,
+      "spec_accepted_tokens": 2937.0,
+      "spec_drafts": 1172.0,
+      "spec_acceptance_rate": 0.6264931740614335,
+      "spec_mean_accepted_len": 3.505972696245734,
+      "label": "smoke_k4",
+      "gpu_mem_gb": 119.9755859375,
+      "usd_per_1m_tokens": 45.18738143904988,
+      "cost_assumption_usd_gpu_hour": 3.5
+    }
+  ],
+  "args": {
+    "base_url": "http://127.0.0.1:8290",
+    "model": null,
+    "label": "smoke_k4",
+    "dataset": "math500",
+    "split": "test",
+    "n": 16,
+    "concurrency": "1",
+    "rate": 0.0,
+    "max_tokens": 256,
+    "temperature": 0.0,
+    "cost_per_gpu_hour": 3.5,
+    "seed": 0
+  }
+}
