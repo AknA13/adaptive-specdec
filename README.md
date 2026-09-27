@@ -182,35 +182,36 @@ are token-identical to speculation-off**. The shared KV cache group reports
 `389,136 tokens` across all 64 layers, and the drafter compiles under its own tag
 with CUDA graphs captured.
 
-**Speculation does not pay on this model pair, and both runtimes agree why.**
+**The adaptive controller works, and beats every fixed k.** On the vLLM serving
+sweep it wins at every concurrency level by measuring the cost ratio online and
+settling on k ≈ 1:
 
-| | α | accepted/round | vs autoregressive |
+| conc | best fixed k | adaptive |
+|---|---|---|
+| 1 | 0.62× (k=2) | **0.69×** |
+| 4 | 0.54× (k=2) | **0.69×** |
+| 16 | 0.50× (k=2) | **0.66×** |
+
+It got there only after a real bug: the controller was never handed timing, so
+`c` stayed at its 0.15 initialisation and it optimised for a draft ten times
+cheaper than the real one — tracking fixed k=8 at **0.32×**. Same policy, same
+code path, 0.32× → 0.69× purely from measuring the cost model instead of
+assuming it. That is the honest case for adaptivity: **insurance against a badly
+chosen k on an unknown workload**, not a way to exceed a well-chosen one.
+
+**Speculation still does not beat autoregressive on this pair, and both runtimes
+agree why.**
+
+| | α (conditional) | accepted/round | vs autoregressive |
 |---|---|---|---|
-| from-scratch engine, k=4 | 0.91 | 4.10 | 0.85× |
-| from-scratch engine, adaptive | 0.91 | 4.38 | 0.88× |
-| vLLM, k=2 (conc 1) | 0.78 | 2.56 | 0.61× |
+| engine, k=4 | 0.91 | 4.10 | 0.85× |
+| vLLM, k=2 | 0.86 | 2.56 | 0.62× |
+| vLLM, adaptive | 0.86 | 1.86 | 0.69× |
 
-Acceptance is high — an *untrained* 0.6B draft agrees with the 8B 91% of the time
-on math — and throughput still falls. The cost ratio is why:
-
-- **From-scratch engine:** Self CPU 3.52 s vs Self CUDA 0.50 s, and a batch-8
-  forward costs the same 21.4 ms as a batch-1 forward. Nothing is compute-bound,
-  so the 0.6B costs 76% of the 8B (c = 0.76) instead of ~1/13. CUDA-graphing one
-  draft decode: **21.4 ms → 4.7 ms, 4.58×, so 78% of the step was launch
-  overhead.**
-- **vLLM:** not generic launch overhead — the drafter is compiled and graphed —
-  but a specific upstream limit. **The drafter can only use PIECEWISE CUDA
-  graphs** (`eagle.py:295,398,801,1173`) while the target gets FULL ones
-  (`gpu_model_runner.py:3603`). PIECEWISE excludes attention, so a 28-layer
-  draft launches ~56 eager attention kernels per round against the target's
-  zero. That penalty scales with draft *depth* and is invisible for the
-  one-layer EAGLE head the path was designed for. Backing t_draft out of the
-  inter-token latency gives c ≈ 1.6.
-
-Feed those into the speedup formula the controller maximises and it predicts
-0.93× and 0.55× respectively. Measured: 0.88× and 0.61×. **The controller is not
-underperforming; it is correctly reporting that there is no speedup available on
-this pair.**
+Acceptance is high — an *untrained* 0.6B draft agrees with the 8B ~87% of the
+time per position, and that rate is flat across draft positions, so the
+geometric model behind the controller holds. Throughput still falls, because the
+cost ratio dominates:
 
 ## Gates
 
@@ -221,8 +222,8 @@ the metric that shows it.
 |---|---|---|
 | G1 | losslessness: TV < 0.02 vs the exact AR marginal | **pass** — 0.0056, χ² p=0.62, all 4 injected bugs caught |
 | G2 | greedy output token-identical to autoregressive | **pass** — CPU exact; on GPU every divergence is a bf16 tie (gap 0.25 vs 2 ULP 0.34), zero hard mismatches; vLLM path 16/16 identical |
-| G3 | trained draft raises acceptance ≥ 0.05 over stock | queued (trace gen → FSDP training) |
-| G4 | adaptive ≥ 95% of best fixed k everywhere, ≥ it somewhere | **pass in simulation** (+17.7% on a shifting workload); adaptive beats every fixed k measured on GPU |
+| G3 | trained draft raises acceptance ≥ 0.05 over stock | **fails, and informative** — +0.021 in-domain (gsm8k), −0.017 out-of-domain (MATH-500). Qwen3-0.6B is already a distilled sibling of the target, so fine-tuning is domain adaptation, not an acceptance win. See `RESULTS_TRAINING.md` |
+| G4 | adaptive ≥ 95% of best fixed k everywhere, ≥ it somewhere | **pass on hardware** — beats every fixed k at every concurrency (0.69× vs 0.62× at conc 1; 0.66× vs 0.50× at 16), plus +17.7% in simulation on a shifting workload |
 | G5 | ≥ 1.5× tokens/s vs autoregressive | **fails, and explained** — 0.88× (engine) / 0.61× (vLLM); the cost ratio makes it unreachable, see above |
 | G6 | vLLM bring-up checkpoints 1–6 | **pass** — including 16/16 greedy identity |
 

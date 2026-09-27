@@ -54,28 +54,48 @@ def load(pattern):
 
 
 def fig_alpha_by_position(plt):
-    """Why adaptive k exists: if alpha were flat, one fixed k would do."""
-    runs = load("stage4_*.json")
+    """Per-position conditional acceptance, one line per trained draft.
+
+    Titled for what the data shows, not for what was expected. The geometric
+    model behind the controller's speedup formula assumes a single per-position
+    acceptance probability; if that held only loosely, the analytic k* would be
+    built on sand. It holds here, which is the finding.
+
+    Only the three draft variants on one dataset -- earlier exploratory runs
+    (eager/compiled/quick tags) share the results directory and would put seven
+    near-identical lines on one axis.
+    """
+    keep = {"stock", "sft", "sft_kd"}
     series = {}
-    for stem, d in runs:
+    for stem, d in load("stage4_*.json"):
+        if d.get("args", {}).get("dataset") != "math500":
+            continue
+        best = {}
         for r in d.get("rows", []):
-            if r.get("method", "").startswith("fixed8") and r.get("mode") == "greedy":
-                key = f"{r.get('draft','?')} / {r.get('prompt_len','?')}"
-                series.setdefault(key, r.get("alpha_by_position") or [])
+            m = r.get("method", "")
+            if (m.startswith("fixed") and m[5:].isdigit()
+                    and r.get("mode") == "greedy" and r.get("draft") in keep):
+                key = r["draft"]
+                if int(m[5:]) >= best.get(key, (0, None))[0]:
+                    best[key] = (int(m[5:]), r.get("alpha_by_position") or [])
+        for key, (_, ab) in best.items():
+            if ab:
+                series[key] = ab
     if not series:
         return None
     fig, ax = plt.subplots(figsize=(5.6, 3.4))
-    for i, (label, ys) in enumerate(sorted(series.items())):
-        xs = list(range(1, len(ys) + 1))
-        ax.plot(xs, ys, color=SERIES[i % len(SERIES)], marker="o", label=label)
-        if ys:
-            ax.annotate(f"{ys[-1]:.2f}", (xs[-1], ys[-1]), textcoords="offset points",
-                        xytext=(6, 0), color=INK, fontsize=8, va="center")
+    for i, label in enumerate(["stock", "sft", "sft_kd"]):
+        ys = series.get(label)
+        if not ys:
+            continue
+        ax.plot(range(1, len(ys) + 1), ys, color=SERIES[i % len(SERIES)],
+                marker="o", label=label)
     ax.set_xlabel("draft position within a round")
-    ax.set_ylabel("acceptance rate given the position was reached")
-    ax.set_title("Acceptance decays along the draft")
+    ax.set_ylabel("acceptance | position reached")
+    ax.set_title("Per-position acceptance is flat, as the geometric model assumes")
     ax.set_ylim(0, 1)
-    ax.legend(loc="lower left", fontsize=8)
+    ax.set_xticks(range(1, max(len(v) for v in series.values()) + 1))
+    ax.legend(fontsize=8, loc="lower left", ncol=3)
     fig.tight_layout()
     return fig, "alpha_by_position.png"
 
