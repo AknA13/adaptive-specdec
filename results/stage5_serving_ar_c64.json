@@ -1,0 +1,37 @@
+{
+  "rows": [
+    {
+      "concurrency": 64,
+      "requests": 32,
+      "ok": 32,
+      "wall_s": 2.3457041268702596,
+      "output_tokens": 8171,
+      "output_tok_per_s": 3483.389020124249,
+      "req_per_s": 13.641959202542646,
+      "ttft_p50": 0.48522894480265677,
+      "ttft_p95": 0.48774206591770053,
+      "itl_mean": 0.007323996929508122,
+      "itl_p95": 0.007498713908717036,
+      "e2e_p50": 2.34015184501186,
+      "e2e_p95": 2.343013668898493,
+      "label": "ar_c64",
+      "gpu_mem_gb": 120.2939453125,
+      "usd_per_1m_tokens": 0.2791023961451035,
+      "cost_assumption_usd_gpu_hour": 3.5
+    }
+  ],
+  "args": {
+    "base_url": "http://127.0.0.1:8288",
+    "model": null,
+    "label": "ar_c64",
+    "dataset": "math500",
+    "split": "test",
+    "n": 32,
+    "concurrency": "64",
+    "rate": 0.0,
+    "max_tokens": 256,
+    "temperature": 0.0,
+    "cost_per_gpu_hour": 3.5,
+    "seed": 0
+  }
+}

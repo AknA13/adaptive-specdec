@@ -133,10 +133,31 @@ def main():
     # Idempotent like every other stage: this partition preempts, and a requeued
     # job should skip labels that already finished rather than redo 10 minutes
     # of model loading and generation for a result that is already on disk.
+    # Checkpoint per ROW, not per file. A row is (mode, prompt_len, method);
+    # after each one the partial JSON is rewritten, and on start any rows
+    # already present are reused. Written after losing ten finished rows to a
+    # preemption that landed two rows before the file would have been saved --
+    # the third preemption that day.
     out_path = C.RESULTS_DIR / f"stage4_{args.tag}_{args.draft_label}.json"
+    prior = {}
     if out_path.exists() and not args.overwrite:
-        log(f"{out_path} exists -- skipping (pass --overwrite to redo)")
-        return 0
+        try:
+            prev = json.loads(out_path.read_text())
+            if prev.get("complete"):
+                log(f"{out_path} is complete -- skipping (pass --overwrite to redo)")
+                return 0
+            for r in prev.get("rows", []):
+                prior[(r["mode"], r["prompt_len"], r["method"])] = r
+            log(f"resuming: {len(prior)} row(s) already on disk")
+        except Exception as e:
+            log(f"could not read partial {out_path} ({e}); starting fresh")
+
+    def checkpoint(rows, gate_fail, complete=False):
+        C.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = out_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps({"rows": rows, "args": vars(args),
+                                   "gate_failures": gate_fail, "complete": complete}, indent=2))
+        tmp.replace(out_path)          # atomic: a preemption mid-write cannot corrupt it
 
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -233,21 +254,37 @@ def main():
                 return outs_all, agg
 
             torch.cuda.reset_peak_memory_stats()
+            specs = [("fixed" + k, dict(k=int(k))) for k in args.k_grid.split(",") if k]
+            specs += [(c, dict(controller=None, _spec=c))
+                      for c in args.controllers.split(",") if c]
+            cell_done = all((mode, plen_label, lbl) in prior for lbl, _ in specs)
+            ar_key = (mode, plen_label, "ar")
+            if ar_key in prior and cell_done:
+                rows.append(prior[ar_key])
+                for lbl, _ in specs:
+                    rows.append(prior[(mode, plen_label, lbl)])
+                log(f"{mode:6s} {plen_label:5s} all rows on disk -- skipping cell")
+                continue
             if not args.skip_ar:
+                # The AR token lists are needed for the G2 identity check, and
+                # those are not checkpointed, so AR is re-run whenever any
+                # speculative row in this cell is still missing.
                 baseline_out, ar = run("ar", ar=True, seed=0)
                 ar.update(method="ar", mode=mode, prompt_len=plen_label,
                           batch_size=args.batch_size, draft=args.draft_label)
                 rows.append(ar)
+                checkpoint(rows, gate_fail)
                 log(f"{mode:6s} {plen_label:5s} ar            "
                     f"{ar['tokens_per_s']:7.2f} tok/s  acc={ar['accuracy']:.3f}")
                 ar_tps = ar["tokens_per_s"]
             else:
                 ar_tps = None
 
-            specs = [("fixed" + k, dict(k=int(k))) for k in args.k_grid.split(",") if k]
-            specs += [(c, dict(controller=None, _spec=c))
-                      for c in args.controllers.split(",") if c]
             for label, kw in specs:
+                if (mode, plen_label, label) in prior:
+                    rows.append(prior[(mode, plen_label, label)])
+                    log(f"{mode:6s} {plen_label:5s} {label:13s} (on disk)")
+                    continue
                 if "_spec" in kw:
                     kw = dict(controller=make_controller(kw["_spec"], k_max=C.K_MAX,
                                                          tau=C.EARLY_EXIT_TAU))
@@ -289,6 +326,7 @@ def main():
                                 f"(gap {hard[0]['top1_top2_gap']} > 2 ULP "
                                 f"{hard[0]['bf16_ulp']})")
                 rows.append(r)
+                checkpoint(rows, gate_fail)
                 log(f"{mode:6s} {plen_label:5s} {label:13s} "
                     f"{r['tokens_per_s']:7.2f} tok/s  "
                     f"x{r.get('speedup_vs_ar', float('nan')):.2f}  "
@@ -297,16 +335,14 @@ def main():
                     f"k={r['mean_k']:.1f}  acc={r['accuracy']:.3f}  "
                     f"{'IDENTICAL' if r.get('greedy_identical') else ''}")
 
-    out = {"rows": rows, "args": vars(args), "gate_failures": gate_fail}
     # G5: best speculative config at greedy must beat AR by the gate factor.
     g5 = [r for r in rows if r["mode"] == "greedy" and r.get("speedup_vs_ar")]
     if g5:
         best = max(r["speedup_vs_ar"] for r in g5)
-        out["g5_best_speedup"] = best
         if best < C.G5_SPEEDUP:
             gate_fail.append(f"G5: best greedy speedup {best:.2f}x < {C.G5_SPEEDUP}x")
-    p = C.publish_result(f"stage4_{args.tag}_{args.draft_label}", out)
-    log(f"wrote {p}")
+    checkpoint(rows, gate_fail, complete=True)
+    log(f"wrote {out_path} (complete)")
     if gate_fail:
         log("GATE FAILURES:")
         for g in gate_fail:
