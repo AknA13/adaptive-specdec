@@ -122,11 +122,21 @@ def main():
     ap.add_argument("--capacity", type=int, default=4096)
     ap.add_argument("--tag", default="engine")
     ap.add_argument("--skip-ar", action="store_true")
+    ap.add_argument("--overwrite", action="store_true",
+                    help="re-run even if results/stage4_<tag>_<label>.json exists")
     ap.add_argument("--compile", default="",
                     help="torch.compile mode for both models (e.g. default, "
                          "reduce-overhead). Empty = eager. The engine is "
                          "launch-bound, so this is the lever that matters.")
     args = ap.parse_args()
+
+    # Idempotent like every other stage: this partition preempts, and a requeued
+    # job should skip labels that already finished rather than redo 10 minutes
+    # of model loading and generation for a result that is already on disk.
+    out_path = C.RESULTS_DIR / f"stage4_{args.tag}_{args.draft_label}.json"
+    if out_path.exists() and not args.overwrite:
+        log(f"{out_path} exists -- skipping (pass --overwrite to redo)")
+        return 0
 
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
