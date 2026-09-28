@@ -73,6 +73,15 @@ and `RESULTS_SERVING.md`.
 
 ## Cluster notes
 
+- **The conda env must be node-local.** 2026-09-28, measured on horton via
+  srun: `import torch` from the /scratch (NFS) env took 690 s; stat of 200 env
+  files 0.19 s; reading 100 MB from /data 0.06 s; load 10.8. The NFS mount's
+  bulk-read throughput to the compute nodes is what failed. The full 8.1 GB
+  `rl` env is now replicated to `/data/$USER/envs/rl_node` on horton and lorax
+  with the plugin installed; `scripts/lib.sh` picks it automatically. If a new
+  node is added, copy the env there before running anything on it. (The older
+  `rl_local` on horton is a hollow skeleton with empty `torch/` and `vllm/`
+  and must not be used.)
 - **thidwick is unusable for this env.** 2026-09-28: the env check's
   `packages` step (import torch) took 52 minutes there, `models` (read a
   config.json) 43 minutes, and a vLLM server produced no log output in 30
