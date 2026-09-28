@@ -73,6 +73,21 @@ and `RESULTS_SERVING.md`.
 
 ## Cluster notes
 
+- **thidwick is unusable for this env.** 2026-09-28: the env check's
+  `packages` step (import torch) took 52 minutes there, `models` (read a
+  config.json) 43 minutes, and a vLLM server produced no log output in 30
+  minutes. The same steps take seconds on horton and lorax. Both benchmark jobs
+  that landed there were cancelled after wasting ~2.6 GPU-hours. The conda env
+  lives on /scratch (NFS from oz); whatever is wrong is between thidwick and
+  that mount. `SPEC_SLURM_EXCLUDE` now defaults to `thidwick`.
+- **QOS: use `preemptive`, not `normal`.** `sacctmgr` shows `normal` is the
+  lowest tier on this cluster (displaced by `preemptive` and `preemptive_high`);
+  `preemptive` is only displaced by `preemptive_high`. The first `gaps` attempt
+  on `normal` was bumped 2.5 minutes in.
+- **Priority queue reality.** Even at #2/#3 in the partition, a single array job
+  ahead consumed every freed GPU for hours. Floating across horton and lorax
+  (checkpoints staged to both) is the only lever left.
+
 - All 23 `berkeleynlp` H200s were allocated when this was written; expect to
   queue. Every partition is `PreemptMode=REQUEUE`, so every stage skips work
   that already exists on disk and every job uses `--requeue`.
