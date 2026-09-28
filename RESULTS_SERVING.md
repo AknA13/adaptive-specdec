@@ -75,6 +75,31 @@ A 0.6B draft forward costing 1.6× an 8B target forward is the whole story, and
 the from-scratch engine reached the same conclusion from a different runtime
 (`RESULTS_ENGINE.md`, c = 0.76 there).
 
+## The memory cost nobody quotes: 45% of your KV cache
+
+vLLM preallocates a KV pool, so "GPU memory used" is a configured constant
+(~120 GB at `gpu_memory_utilization=0.85`) and tells you nothing. The number
+that matters is how many tokens fit in it, and the draft model's 28 layers share
+the same cache group as the target's 36 — measured directly from the two
+servers' own startup logs:
+
+| configuration | KV cache | max concurrency @ 4k context |
+|---|---|---|
+| target only (`vllm_ar.out`, `vllm_nospec.out`) | **712,256 tokens** | **173.89×** |
+| target + draft (`vllm_fixed2.out`, `vllm_k4.out`) | **389,136 tokens** | **95.00×** |
+| | **−45.4%** | **−45.4%** |
+
+So enabling draft-model speculative decoding on this pair costs **45% of the
+requests you can hold concurrently at a given context length** — 174 down to 95.
+The predicted figure from the layer counts alone was 36/64 = −43.8%; the extra
+1.6 points is the draft's 1.2 GB of weights displacing pool.
+
+This is a serving cost that the usual framing of speculative decoding
+("free tokens if the draft is right") completely omits, and on a memory-bound
+deployment it can dominate the latency argument: 45% fewer concurrent slots is a
+throughput ceiling, not a per-request tax. It is also the reason the
+concurrency-16 column below degrades faster than concurrency 1.
+
 ## Concurrency behaves as predicted
 
 The gap widens with load: 0.61× at concurrency 1 but 0.52–0.53× at 4 and 16. Once

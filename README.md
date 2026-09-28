@@ -213,6 +213,19 @@ time per position, and that rate is flat across draft positions, so the
 geometric model behind the controller holds. Throughput still falls, because the
 cost ratio dominates:
 
+**And a cost the usual framing omits.** The draft's 28 layers share the target's
+KV cache group, so the pool holds proportionally fewer tokens — measured from
+the servers' own logs:
+
+| | KV cache | max concurrency @ 4k |
+|---|---|---|
+| target only | 712,256 tokens | 173.89× |
+| target + draft | 389,136 tokens | 95.00× |
+
+**Speculative decoding costs 45% of the concurrent requests you can hold.** That
+is a throughput ceiling, not a per-request tax, and it is absent from most
+descriptions of the technique.
+
 ## Gates
 
 A stage is not done until its gate passes, or until its failure is reported with
