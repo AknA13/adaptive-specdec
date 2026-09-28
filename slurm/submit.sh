@@ -43,7 +43,7 @@ if command -v squeue >/dev/null 2>&1; then
 fi
 
 PART="${SPEC_SLURM_PARTITION:-}"; QOS="${SPEC_SLURM_QOS:-}"
-NODELIST="${SPEC_SLURM_NODELIST:-}"; CPUS="${SPEC_SLURM_CPUS:-32}"
+NODELIST="${SPEC_SLURM_NODELIST:-}"; EXCLUDE="${SPEC_SLURM_EXCLUDE:-}"; CPUS="${SPEC_SLURM_CPUS:-32}"
 mkdir -p "$REPO/logs"
 JS="$REPO/logs/${JOB}.job.sh"
 
@@ -55,6 +55,9 @@ JS="$REPO/logs/${JOB}.job.sh"
   [ -n "$PART" ]     && echo "#SBATCH --partition=$PART"
   [ -n "$QOS" ]      && echo "#SBATCH --qos=$QOS"
   [ -n "$NODELIST" ] && echo "#SBATCH --nodelist=$NODELIST"
+  # --exclude lets a job float across the nodes that hold its artifacts instead
+  # of waiting on one; used once checkpoints are staged to more than one /data.
+  [ -n "$EXCLUDE" ]  && echo "#SBATCH --exclude=$EXCLUDE"
   echo "#SBATCH --nodes=1"
   echo "#SBATCH --gres=gpu:${GPUS}"
   echo "#SBATCH --cpus-per-task=${CPUS}"
