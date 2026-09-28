@@ -3,6 +3,11 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 step "environment"
 info "python   : $PY"
+case "$PY" in
+  /data/*) info "           (node-local env)" ;;
+  /scratch/*) warn "python is on /scratch (NFS). On 2026-09-28 import torch took 690 s from there on horton; stage the env to /data/\$USER/envs/rl_node" ;;
+esac
+"$PY" -c "import torch, transformers, vllm" 2>/dev/null || die "the resolved interpreter cannot import torch/transformers/vllm: $PY"
 info "repo     : $REPO"
 info "data root: $DATA"
 "$PY" -c "import sys; sys.path.insert(0,'$REPO'); import config as C; print('[cfg] '+C.describe())"

@@ -17,7 +17,18 @@ elif [ -z "${SPEC_QUIET_ENV:-}" ]; then
   echo "[lib] no env.sh found -- using defaults. cp env.sh.example env.sh and edit it." >&2
 fi
 
-PY="${SPEC_PY:-python}"
+# Prefer a NODE-LOCAL copy of the env when the node has one. Measured on
+# horton 2026-09-28: `import torch` from the /scratch (NFS) env took 690 s
+# while the same env on node-local /data imports in seconds. The local copy
+# must be the same versions (torch 2.9.0 / transformers 4.57.6 / vllm 0.12.0)
+# with the plugin installed; scripts/00_check_env.sh verifies both.
+PY_LOCAL="${SPEC_PY_LOCAL:-/data/$USER/envs/rl_node/bin/python}"
+if [ -x "$PY_LOCAL" ]; then
+  PY="$PY_LOCAL"
+else
+  PY="${SPEC_PY:-python}"
+fi
+export SPEC_PY_RESOLVED="$PY"
 DATA="${SPEC_DATA_ROOT:-$REPO/runs/default}"
 TARGET="${SPEC_TARGET_ID:-Qwen/Qwen3-8B}"
 DRAFT="${SPEC_DRAFT_ID:-Qwen/Qwen3-0.6B}"
