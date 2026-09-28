@@ -104,26 +104,29 @@ N="${SPEC_BENCH_REQS:-64}"
 
 # Every label is skipped if its result already exists: this partition preempts,
 # and a requeued sweep should resume rather than redo 40 minutes of servers.
-done_label() { [ -s "$REPO/results/stage5_serving_$1.json" ]; }
+# A suffix lets a follow-up pass (e.g. a concurrency level the first sweep
+# skipped) run without clobbering results that are already on disk.
+SUF="${SPEC_LABEL_SUFFIX:-}"
+done_label() { [ -s "$REPO/results/stage5_serving_$1$SUF.json" ]; }
 
 sweep_one() {   # sweep_one <label> [server args...]
   local label="$1"; shift
   if done_label "$label"; then info "results/stage5_serving_$label.json exists -- skipping"; return 0; fi
   step "serving sweep: $label"
   start_server "$label" "$@" || { warn "$label server failed"; return 1; }
-  run_soft "$PY" -m bench.bench_serving --base-url "$URL" --label "$label" --n "$N" --concurrency "$CONC"
+  run_soft "$PY" -m bench.bench_serving --base-url "$URL" --label "$label$SUF" --n "$N" --concurrency "$CONC"
   stop_server
 }
 
 sweep_one ar
-for k in 2 4 8; do
+for k in ${SPEC_SWEEP_KS:-2 4 8}; do
   sweep_one "fixed$k" --speculative-config "$(spec_cfg $k)"
 done
 
 if ! done_label adaptive; then
   step "serving sweep: adaptive (k chosen per step from live acceptance)"
   SPECDEC_CONTROLLER=ewma start_server "adaptive" --speculative-config "$(spec_cfg $KMAX)" \
-    && run_soft "$PY" -m bench.bench_serving --base-url "$URL" --label adaptive \
+    && run_soft "$PY" -m bench.bench_serving --base-url "$URL" --label "adaptive$SUF" \
          --n "$N" --concurrency "$CONC"
   stop_server
 fi
