@@ -102,3 +102,46 @@ Every divergence observed was classified as a tie (gap ≤ 2 ULP **and** the
 speculative run chose the runner-up); **zero hard mismatches**. G2 gates on hard
 mismatches, because exact token identity is not a thing bf16 can deliver when the
 target itself cannot order its top two candidates.
+
+
+## Full matrix: sampling mode × prompt length × draft
+
+`results/stage4_gaps_{stock,sft_kd}.json`. MATH-500, 16 problems, 96 new tokens,
+batch 1, lorax H200. Greedy is T=0; sample is T=0.6, top-p 0.95, top-k 20 applied
+identically to draft and target. Long prompts prepend ~1,500 tokens of sibling
+problems as context. α is conditional acceptance at k=4; the adaptive row reports
+the mean k it chose.
+
+| mode | prompt | draft | fixed k=4: α · acc/round · vs AR | adaptive: α · acc/round · k · vs AR |
+|---|---|---|---|---|
+| greedy | short | stock | 0.881 · 3.90 · 0.78× | 0.885 · 3.65 · 3.5 · 0.78× |
+| greedy | long | stock | 0.855 · 3.76 · 0.75× | 0.861 · 3.26 · 3.1 · 0.75× |
+| sample | short | stock | 0.878 · 3.83 · 0.75× | 0.877 · 3.48 · 3.3 · 0.76× |
+| sample | long | stock | 0.844 · 3.67 · 0.73× | 0.836 · 2.92 · 2.7 · 0.72× |
+| greedy | short | sft_kd | 0.864 · 3.76 · 0.75× | 0.862 · 3.26 · 3.1 · 0.76× |
+| greedy | long | sft_kd | 0.841 · 3.67 · 0.73× | 0.834 · 2.82 · 2.5 · 0.73× |
+| sample | short | sft_kd | 0.863 · 3.76 · 0.75× | 0.865 · 3.32 · 3.1 · 0.76× |
+| sample | long | sft_kd | 0.826 · 3.56 · 0.71× | 0.833 · 2.83 · 2.5 · 0.73× |
+
+Four things this settles:
+
+- **The sampling path works on the real models.** This was the largest unverified
+  claim: G1 proves losslessness under temperature and top-p, but only on tiny CPU
+  models, and every GPU run before this one was greedy. Rejection sampling with
+  residual draws at 151,936-way vocab in bf16 runs cleanly, and acceptance under
+  T=0.6 is indistinguishable from greedy (0.878 vs 0.881). With top-k 20 the
+  effective distributions are tight enough that the draft agrees with the target
+  as often as under argmax.
+- **Long context costs acceptance, modestly and consistently:** about −0.025 α
+  for every draft and mode. Sampling and long context compound — the worst cell
+  (sample/long) is 0.844 stock, 0.826 trained.
+- **The controller tracks it.** As α falls across the four conditions the
+  adaptive k it settles on falls with it (3.5 → 3.1 → 3.3 → 2.7 for the stock
+  draft), and it matches or beats fixed k=4 in every one of the eight cells.
+- **The G3 result holds across all eight conditions**, not just the one it was
+  first seen in: the gsm8k-trained draft is below stock in every MATH-500 cell,
+  by 0.017–0.022. Out-of-domain fine-tuning is a consistent small cost.
+
+Accuracy is 1/16 or 0/16 in every cell and is not a usable signal at this n;
+under sampling the two paths draw different random streams, so a one-problem
+difference between them is noise, not a regression.

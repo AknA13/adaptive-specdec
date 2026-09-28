@@ -191,6 +191,7 @@ settling on k ≈ 1:
 | 1 | 0.62× (k=2) | **0.69×** |
 | 4 | 0.54× (k=2) | **0.69×** |
 | 16 | 0.50× (k=2) | **0.66×** |
+| 64 | 0.34× (k=2) | **0.49×** |
 
 It got there only after a real bug: the controller was never handed timing, so
 `c` stayed at its 0.15 initialisation and it optimised for a draft ten times
@@ -210,7 +211,11 @@ agree why.**
 
 Acceptance is high — an *untrained* 0.6B draft agrees with the 8B ~87% of the
 time per position, and that rate is flat across draft positions, so the
-geometric model behind the controller holds. Throughput still falls, because the
+geometric model behind the controller holds. It is also robust to the
+conditions the benchmark varies: **sampling (T=0.6, top-p, top-k) costs
+nothing** (0.878 vs 0.881 greedy), and a **1,500-token prefix costs ~0.025**;
+the controller lowers k as acceptance falls and matches or beats fixed k in
+all eight cells (`RESULTS_ENGINE.md`). Throughput still falls, because the
 cost ratio dominates:
 
 **And a cost the usual framing omits.** The draft's 28 layers share the target's

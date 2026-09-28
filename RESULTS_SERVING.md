@@ -45,12 +45,18 @@ acceptance is a flat ~0.86 (see `results/figures/alpha_by_position.png`).
 | 16 | fixed k=2 | 1169.0 | 0.50× | 11.41 | 0.779 | 2.56 |
 | 16 | **adaptive** | **1536.5** | **0.66×** | 9.80 | 0.852 | 1.85 |
 
+| 64 | autoregressive | **3483.4** | 1.00× | 7.32 | — | — |
+| 64 | fixed k=2 | 1173.4 | 0.34× | 13.81 | 0.761 | 2.52 |
+| 64 | **adaptive** | **1722.1** | **0.49×** | 12.73 | 0.784 | 2.10 |
+
 (k=4 and k=8 at concurrency 4 and 16 follow the same shape: 0.44×/0.30× and
-0.38×/0.25×.)
+0.38×/0.25×. The concurrency-64 rows are from a separate pass,
+`results/stage5_serving_*_c64.json`, with the same server settings.)
 
 **Gate G4 passes on hardware.** The adaptive controller beats *every* fixed k at
 *every* concurrency level — 0.69× against the best fixed policy's 0.62× at
-concurrency 1, and the margin widens under load (0.66× vs 0.50× at 16). It gets
+concurrency 1, and the margin widens under load (0.66× vs 0.50× at 16, 0.49× vs
+0.34× at 64). It gets
 there by settling on k ≈ 1 (1.86 tokens committed per round), which is exactly
 what c ≈ 1.6 implies. Nobody told it c; it measured it.
 
@@ -119,6 +125,15 @@ k=8, a perfectly reasonable choice if you believed α = 0.86) into 0.69×.
 That is the honest case for adaptivity, and it is the case this project actually
 demonstrates: **it is insurance against a badly chosen k on an unknown
 workload**, not a way to exceed a well-chosen one.
+
+**One design limit the concurrency-64 row exposes.** The controller's floor is
+k = 1, so it can never switch speculation *off*. At 64 concurrent requests the
+verify step is saturated and even one draft forward per round is compute taken
+from another request — adaptive falls to 0.49× while still holding its lead
+over every fixed k. Allowing k = 0 ("skip drafting this step") would let it
+converge to ~1.0× under saturation. `SpecDecodeMetadata` already accepts zero
+draft tokens per request, so this is a small change to `propose()` and the
+controller's range, and the obvious next experiment.
 
 The honest headline is that this project demonstrates a working, correct,
 previously-missing vLLM component, and measures precisely why this particular
